@@ -247,6 +247,23 @@ function Canvas({
             const [x, y] = key.split(',').map(Number)
             return <CellRenderer key={key} x={x} y={y} color={resolveColor(value, state.legend)} />
           })}
+          {wallStart &&
+            wallCurrent &&
+            cellsAlongLine(wallStart.x, wallStart.y, wallCurrent.x, wallCurrent.y).map((key) => {
+              const [x, y] = key.split(',').map(Number)
+              return (
+                <rect
+                  key={key}
+                  x={x * CELL_SIZE}
+                  y={y * CELL_SIZE}
+                  width={CELL_SIZE}
+                  height={CELL_SIZE}
+                  fill="none"
+                  stroke="black"
+                  strokeWidth={2}
+                />
+              )
+            })}
           {wallStart && wallCurrent && (
             <line
               x1={wallStart.x * CELL_SIZE}
