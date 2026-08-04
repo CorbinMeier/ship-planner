@@ -1,19 +1,18 @@
-export type ToolMode = 'select' | 'draw'
-export type ElementKind = 'wall' | 'room'
+export type ToolMode = 'paint' | 'wall'
 
-export interface ShipElement {
+export interface LegendEntry {
   id: string
-  kind: ElementKind
-  x: number
-  y: number
-  width: number
-  height: number
+  label: string
+  color: string
 }
 
-// Future: floors: { id: string; name: string; elements: ShipElement[] }[]
+// 'wall' is a reserved value; any other string references a LegendEntry.id
+export type CellValue = 'wall' | string
+
+// Future: floors: { id: string; name: string; cells: EditorState['cells'] }[]
 export interface EditorState {
-  elements: ShipElement[]
-  selectedId: string | null
+  cells: Record<string, CellValue>
+  legend: LegendEntry[]
 }
 
 export interface ViewTransform {

@@ -3,39 +3,36 @@ import type { ViewTransform } from '../../types/editor'
 
 interface GridProps {
   viewTransform: ViewTransform
-  width: number
-  height: number
+  viewportWidth: number
+  viewportHeight: number
 }
 
-function Grid({ viewTransform, width, height }: GridProps) {
+// Rendered inside the same <g transform=...> as the cells (see Canvas.tsx),
+// so the grid and cell fills share one transform and can never drift apart.
+// The pattern itself is untransformed; only the covering rect's local
+// bounds are recomputed from the inverse of the shared transform so it
+// always spans the visible viewport regardless of pan/zoom.
+function Grid({ viewTransform, viewportWidth, viewportHeight }: GridProps) {
   const { offsetX, offsetY, scale } = viewTransform
-  const size = CELL_SIZE
-  const majorSize = size * 5
+  const majorSize = CELL_SIZE * 5
+
+  const localX = -offsetX / scale
+  const localY = -offsetY / scale
+  const localWidth = viewportWidth / scale
+  const localHeight = viewportHeight / scale
 
   return (
     <>
       <defs>
-        <pattern
-          id="grid-minor"
-          width={size}
-          height={size}
-          patternUnits="userSpaceOnUse"
-          patternTransform={`translate(${offsetX}, ${offsetY}) scale(${scale})`}
-        >
+        <pattern id="grid-minor" width={CELL_SIZE} height={CELL_SIZE} patternUnits="userSpaceOnUse">
           <path
-            d={`M ${size} 0 L 0 0 0 ${size}`}
+            d={`M ${CELL_SIZE} 0 L 0 0 0 ${CELL_SIZE}`}
             fill="none"
             className="stroke-slate-300"
             strokeWidth={1}
           />
         </pattern>
-        <pattern
-          id="grid-major"
-          width={majorSize}
-          height={majorSize}
-          patternUnits="userSpaceOnUse"
-          patternTransform={`translate(${offsetX}, ${offsetY}) scale(${scale})`}
-        >
+        <pattern id="grid-major" width={majorSize} height={majorSize} patternUnits="userSpaceOnUse">
           <rect width={majorSize} height={majorSize} fill="url(#grid-minor)" />
           <path
             d={`M ${majorSize} 0 L 0 0 0 ${majorSize}`}
@@ -45,7 +42,7 @@ function Grid({ viewTransform, width, height }: GridProps) {
           />
         </pattern>
       </defs>
-      <rect width={width} height={height} fill="url(#grid-major)" />
+      <rect x={localX} y={localY} width={localWidth} height={localHeight} fill="url(#grid-major)" />
     </>
   )
 }

@@ -1,43 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PointerEvent, WheelEvent } from 'react'
+import type { MouseEvent, PointerEvent, WheelEvent } from 'react'
 import Grid from './Grid'
-import ShapeElement from './ShapeElement'
-import { CELL_SIZE, MAX_SCALE, MIN_SCALE } from './constants'
-import type {
-  EditorState,
-  ElementKind,
-  ShipElement,
-  ToolMode,
-  ViewTransform,
-} from '../../types/editor'
+import CellRenderer from './CellRenderer'
+import { CELL_SIZE, WALL_COLOR } from './constants'
+import { cellKey, cellsAlongLine, screenToCell, screenToLocal } from './geometry'
+import type { EditorState, LegendEntry, ToolMode, ViewTransform } from '../../types/editor'
 
 interface CanvasProps {
   state: EditorState
   onChange: (state: EditorState) => void
   tool: ToolMode
-  elementKind: ElementKind
+  activeLegendId: string | null
   viewTransform: ViewTransform
   onViewTransformChange: (viewTransform: ViewTransform) => void
 }
 
-type DragMode = 'none' | 'drawing' | 'moving'
+type DragMode = 'none' | 'painting' | 'wall-drawing'
 
-interface DraftRect {
-  x: number
-  y: number
-  width: number
-  height: number
-}
+const FALLBACK_COLOR = '#94a3b8'
 
-function createId() {
-  return Math.random().toString(36).slice(2, 10)
+function resolveColor(value: string, legend: LegendEntry[]): string {
+  if (value === 'wall') return WALL_COLOR
+  return legend.find((entry) => entry.id === value)?.color ?? FALLBACK_COLOR
 }
 
 function Canvas({
   state,
   onChange,
   tool,
-  elementKind,
+  activeLegendId,
   viewTransform,
   onViewTransformChange,
 }: CanvasProps) {
@@ -46,9 +37,9 @@ function Canvas({
   const [size, setSize] = useState({ width: 0, height: 0 })
 
   const dragModeRef = useRef<DragMode>('none')
-  const dragStartRef = useRef({ x: 0, y: 0 })
-  const moveOriginRef = useRef({ x: 0, y: 0 })
-  const [draftRect, setDraftRect] = useState<DraftRect | null>(null)
+  const lastPaintedRef = useRef<string | null>(null)
+  const [wallStart, setWallStart] = useState<{ x: number; y: number } | null>(null)
+  const [wallCurrent, setWallCurrent] = useState<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     const el = containerRef.current
@@ -56,147 +47,117 @@ function Canvas({
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0]
       if (!entry) return
-      setSize({
-        width: entry.contentRect.width,
-        height: entry.contentRect.height,
-      })
+      setSize({ width: entry.contentRect.width, height: entry.contentRect.height })
     })
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
 
-  const screenToGrid = useCallback(
-    (clientX: number, clientY: number) => {
-      const rect = svgRef.current?.getBoundingClientRect()
-      if (!rect) return { x: 0, y: 0 }
-      const localX = clientX - rect.left - viewTransform.offsetX
-      const localY = clientY - rect.top - viewTransform.offsetY
-      return {
-        x: Math.floor(localX / viewTransform.scale / CELL_SIZE),
-        y: Math.floor(localY / viewTransform.scale / CELL_SIZE),
-      }
-    },
-    [viewTransform],
-  )
-
-  const handleWheel = useCallback(
-    (e: WheelEvent<SVGSVGElement>) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault()
-        const rect = svgRef.current?.getBoundingClientRect()
-        if (!rect) return
-        const cursorX = e.clientX - rect.left
-        const cursorY = e.clientY - rect.top
-        const factor = Math.exp(-e.deltaY * 0.002)
-        const newScale = Math.min(
-          MAX_SCALE,
-          Math.max(MIN_SCALE, viewTransform.scale * factor),
-        )
-        const ratio = newScale / viewTransform.scale
-        onViewTransformChange({
-          scale: newScale,
-          offsetX: cursorX - (cursorX - viewTransform.offsetX) * ratio,
-          offsetY: cursorY - (cursorY - viewTransform.offsetY) * ratio,
-        })
+  const paintCell = useCallback(
+    (x: number, y: number) => {
+      const key = cellKey(x, y)
+      const nextValue = activeLegendId ?? undefined
+      if (state.cells[key] === nextValue) return
+      const cells = { ...state.cells }
+      if (nextValue === undefined) {
+        delete cells[key]
       } else {
-        onViewTransformChange({
-          ...viewTransform,
-          offsetX: viewTransform.offsetX - e.deltaX,
-          offsetY: viewTransform.offsetY - e.deltaY,
-        })
+        cells[key] = nextValue
       }
+      onChange({ ...state, cells })
     },
-    [viewTransform, onViewTransformChange],
+    [state, onChange, activeLegendId],
   )
 
-  const handleBackgroundPointerDown = useCallback(
+  const cancelWallDraw = useCallback(() => {
+    dragModeRef.current = 'none'
+    setWallStart(null)
+    setWallCurrent(null)
+  }, [])
+
+  const handlePointerDown = useCallback(
     (e: PointerEvent<SVGSVGElement>) => {
+      const rect = svgRef.current?.getBoundingClientRect()
+      if (!rect) return
       ;(e.target as Element).setPointerCapture?.(e.pointerId)
-      if (tool === 'draw') {
-        const { x, y } = screenToGrid(e.clientX, e.clientY)
-        dragModeRef.current = 'drawing'
-        dragStartRef.current = { x, y }
-        setDraftRect({ x, y, width: 0, height: 0 })
+
+      if (tool === 'paint') {
+        const cell = screenToCell(e.clientX, e.clientY, rect, viewTransform)
+        dragModeRef.current = 'painting'
+        lastPaintedRef.current = cellKey(cell.x, cell.y)
+        paintCell(cell.x, cell.y)
       } else {
-        onChange({ ...state, selectedId: null })
+        const local = screenToLocal(e.clientX, e.clientY, rect, viewTransform)
+        dragModeRef.current = 'wall-drawing'
+        setWallStart(local)
+        setWallCurrent(local)
       }
     },
-    [tool, screenToGrid, onChange, state],
-  )
-
-  const handleShapePointerDown = useCallback(
-    (e: PointerEvent<SVGRectElement>, element: ShipElement) => {
-      if (tool !== 'select') return
-      e.stopPropagation()
-      e.currentTarget.setPointerCapture?.(e.pointerId)
-      const { x, y } = screenToGrid(e.clientX, e.clientY)
-      dragModeRef.current = 'moving'
-      moveOriginRef.current = { x: x - element.x, y: y - element.y }
-      onChange({ ...state, selectedId: element.id })
-    },
-    [tool, screenToGrid, onChange, state],
+    [tool, viewTransform, paintCell],
   )
 
   const handlePointerMove = useCallback(
     (e: PointerEvent<SVGSVGElement>) => {
-      if (dragModeRef.current === 'drawing') {
-        const { x, y } = screenToGrid(e.clientX, e.clientY)
-        const start = dragStartRef.current
-        setDraftRect({
-          x: Math.min(start.x, x),
-          y: Math.min(start.y, y),
-          width: Math.abs(x - start.x),
-          height: Math.abs(y - start.y),
-        })
-      } else if (dragModeRef.current === 'moving' && state.selectedId) {
-        const { x, y } = screenToGrid(e.clientX, e.clientY)
-        const originOffset = moveOriginRef.current
-        const nextX = x - originOffset.x
-        const nextY = y - originOffset.y
-        onChange({
-          ...state,
-          elements: state.elements.map((el) =>
-            el.id === state.selectedId ? { ...el, x: nextX, y: nextY } : el,
-          ),
-        })
+      const rect = svgRef.current?.getBoundingClientRect()
+      if (!rect) return
+
+      if (dragModeRef.current === 'painting') {
+        const cell = screenToCell(e.clientX, e.clientY, rect, viewTransform)
+        const key = cellKey(cell.x, cell.y)
+        if (key !== lastPaintedRef.current) {
+          lastPaintedRef.current = key
+          paintCell(cell.x, cell.y)
+        }
+      } else if (dragModeRef.current === 'wall-drawing') {
+        setWallCurrent(screenToLocal(e.clientX, e.clientY, rect, viewTransform))
       }
     },
-    [screenToGrid, state, onChange],
+    [viewTransform, paintCell],
   )
 
   const handlePointerUp = useCallback(() => {
-    if (dragModeRef.current === 'drawing' && draftRect) {
-      if (draftRect.width >= 1 && draftRect.height >= 1) {
-        const newElement: ShipElement = {
-          id: createId(),
-          kind: elementKind,
-          x: draftRect.x,
-          y: draftRect.y,
-          width: draftRect.width,
-          height: draftRect.height,
-        }
-        onChange({
-          elements: [...state.elements, newElement],
-          selectedId: newElement.id,
-        })
-      }
-      setDraftRect(null)
+    if (dragModeRef.current === 'wall-drawing' && wallStart && wallCurrent) {
+      const keys = cellsAlongLine(wallStart.x, wallStart.y, wallCurrent.x, wallCurrent.y)
+      const cells = { ...state.cells }
+      for (const key of keys) cells[key] = 'wall'
+      onChange({ ...state, cells })
     }
     dragModeRef.current = 'none'
-  }, [draftRect, elementKind, onChange, state.elements])
+    lastPaintedRef.current = null
+    setWallStart(null)
+    setWallCurrent(null)
+  }, [wallStart, wallCurrent, state, onChange])
+
+  const handleContextMenu = useCallback(
+    (e: MouseEvent) => {
+      e.preventDefault()
+      if (dragModeRef.current === 'wall-drawing') cancelWallDraw()
+    },
+    [cancelWallDraw],
+  )
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedId) {
-        onChange({
-          elements: state.elements.filter((el) => el.id !== state.selectedId),
-          selectedId: null,
-        })
+      if (e.key === 'Escape' && dragModeRef.current === 'wall-drawing') {
+        cancelWallDraw()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [state, onChange])
+  }, [cancelWallDraw])
+
+  // Pan only — no wheel-zoom. Zoom is a dedicated toolbar control so it
+  // never fights with (or triggers) the browser's own page zoom.
+  const handleWheel = useCallback(
+    (e: WheelEvent<SVGSVGElement>) => {
+      onViewTransformChange({
+        ...viewTransform,
+        offsetX: viewTransform.offsetX - e.deltaX,
+        offsetY: viewTransform.offsetY - e.deltaY,
+      })
+    },
+    [viewTransform, onViewTransformChange],
+  )
 
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden">
@@ -204,34 +165,36 @@ function Canvas({
         ref={svgRef}
         width={size.width}
         height={size.height}
-        className="h-full w-full bg-slate-50 touch-none"
+        className={`h-full w-full bg-slate-50 touch-none ${
+          tool === 'wall' ? 'cursor-crosshair' : 'cursor-cell'
+        }`}
         onWheel={handleWheel}
-        onPointerDown={handleBackgroundPointerDown}
+        onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onContextMenu={handleContextMenu}
       >
-        <Grid viewTransform={viewTransform} width={size.width} height={size.height} />
         <g
           transform={`translate(${viewTransform.offsetX}, ${viewTransform.offsetY}) scale(${viewTransform.scale})`}
         >
-          {state.elements.map((element) => (
-            <ShapeElement
-              key={element.id}
-              element={element}
-              selected={element.id === state.selectedId}
-              onPointerDown={handleShapePointerDown}
-            />
-          ))}
-          {draftRect && (
-            <rect
-              x={draftRect.x * CELL_SIZE}
-              y={draftRect.y * CELL_SIZE}
-              width={draftRect.width * CELL_SIZE}
-              height={draftRect.height * CELL_SIZE}
-              fill="none"
-              strokeDasharray="4 4"
+          <Grid
+            viewTransform={viewTransform}
+            viewportWidth={size.width}
+            viewportHeight={size.height}
+          />
+          {Object.entries(state.cells).map(([key, value]) => {
+            const [x, y] = key.split(',').map(Number)
+            return <CellRenderer key={key} x={x} y={y} color={resolveColor(value, state.legend)} />
+          })}
+          {wallStart && wallCurrent && (
+            <line
+              x1={wallStart.x * CELL_SIZE}
+              y1={wallStart.y * CELL_SIZE}
+              x2={wallCurrent.x * CELL_SIZE}
+              y2={wallCurrent.y * CELL_SIZE}
               className="stroke-brand-accent"
-              strokeWidth={2}
+              strokeWidth={3}
+              strokeDasharray="6 4"
             />
           )}
         </g>
