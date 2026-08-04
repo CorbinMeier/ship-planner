@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import Canvas from '../components/canvas/Canvas'
-import Toolbar from '../components/canvas/Toolbar'
 import Legend from '../components/canvas/Legend'
 import EditorHeader from '../components/canvas/EditorHeader'
 import { useTheme } from '../lib/useTheme'
@@ -22,6 +21,7 @@ function EditorPage() {
   const [state, setState] = useState<EditorState>(initialState)
   const [tool, setTool] = useState<ToolMode>('paint')
   const [activeLegendId, setActiveLegendId] = useState<string | null>('room')
+  const [legendVisible, setLegendVisible] = useState(true)
   const [viewTransform, setViewTransform] = useState<ViewTransform>({
     offsetX: 0,
     offsetY: 0,
@@ -41,7 +41,16 @@ function EditorPage() {
 
   return (
     <div className="flex h-screen flex-col">
-      <EditorHeader theme={theme} onToggleTheme={toggleTheme} />
+      <EditorHeader
+        tool={tool}
+        onToolChange={setTool}
+        viewTransform={viewTransform}
+        onViewTransformChange={setViewTransform}
+        legendVisible={legendVisible}
+        onToggleLegend={() => setLegendVisible((visible) => !visible)}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
       <div className="relative flex-1">
         <Canvas
           state={state}
@@ -51,19 +60,15 @@ function EditorPage() {
           viewTransform={viewTransform}
           onViewTransformChange={setViewTransform}
         />
-        <Toolbar
-          tool={tool}
-          onToolChange={setTool}
-          viewTransform={viewTransform}
-          onViewTransformChange={setViewTransform}
-        />
-        <Legend
-          legend={state.legend}
-          activeLegendId={activeLegendId}
-          onSelect={setActiveLegendId}
-          onAdd={handleAddLegendEntry}
-          onRemove={handleRemoveLegendEntry}
-        />
+        {legendVisible && (
+          <Legend
+            legend={state.legend}
+            activeLegendId={activeLegendId}
+            onSelect={setActiveLegendId}
+            onAdd={handleAddLegendEntry}
+            onRemove={handleRemoveLegendEntry}
+          />
+        )}
       </div>
     </div>
   )

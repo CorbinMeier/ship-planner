@@ -78,3 +78,12 @@ export function MoonIcon() {
     </IconBase>
   )
 }
+
+export function KeyIcon() {
+  return (
+    <IconBase>
+      <circle cx="7" cy="15" r="3.5" />
+      <path d="M9.5 12.5 19 3M16 6l2 2M18.5 3.5l2 2" />
+    </IconBase>
+  )
+}

@@ -18,14 +18,6 @@ const TOOLS: { mode: ToolMode; label: string; icon: ReactNode }[] = [
   { mode: 'fill', label: 'Fill', icon: <FillIcon /> },
 ]
 
-function SectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-      {children}
-    </p>
-  )
-}
-
 function ToolButton({
   active,
   onClick,
@@ -42,19 +34,21 @@ function ToolButton({
       type="button"
       onClick={onClick}
       title={label}
+      aria-label={label}
       aria-pressed={active}
-      className={`flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm font-medium transition-colors ${
+      className={`rounded p-1.5 transition-colors ${
         active
           ? 'bg-brand-accent text-white'
           : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
       }`}
     >
       {icon}
-      {label}
     </button>
   )
 }
 
+// Rendered inline inside EditorHeader as a single linear bar — no card
+// chrome of its own (border/shadow/background come from the header).
 function Toolbar({ tool, onToolChange, viewTransform, onViewTransformChange }: ToolbarProps) {
   const setScale = (scale: number) => {
     const clamped = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale))
@@ -62,58 +56,52 @@ function Toolbar({ tool, onToolChange, viewTransform, onViewTransformChange }: T
   }
 
   return (
-    <div className="absolute left-4 top-4 flex w-64 flex-col gap-3 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
-      <div className="flex flex-col gap-1.5">
-        <SectionLabel>Tools</SectionLabel>
-        <div className="flex flex-wrap gap-1">
-          {TOOLS.map(({ mode, label, icon }) => (
-            <ToolButton
-              key={mode}
-              active={tool === mode}
-              onClick={() => onToolChange(mode)}
-              icon={icon}
-              label={label}
-            />
-          ))}
-        </div>
+    <div className="flex items-center gap-3">
+      <div className="flex items-center gap-0.5">
+        {TOOLS.map(({ mode, label, icon }) => (
+          <ToolButton
+            key={mode}
+            active={tool === mode}
+            onClick={() => onToolChange(mode)}
+            icon={icon}
+            label={label}
+          />
+        ))}
       </div>
 
-      <div className="flex flex-col gap-1.5 border-t border-slate-200 pt-3 dark:border-slate-800">
-        <SectionLabel>View</SectionLabel>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setScale(viewTransform.scale - 0.25)}
-            className="rounded px-2 py-1 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            −
-          </button>
-          <input
-            type="range"
-            min={MIN_SCALE}
-            max={MAX_SCALE}
-            step={0.05}
-            value={viewTransform.scale}
-            onChange={(e) => setScale(Number(e.target.value))}
-            className="w-full accent-brand-accent"
-          />
-          <button
-            type="button"
-            onClick={() => setScale(viewTransform.scale + 0.25)}
-            className="rounded px-2 py-1 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            +
-          </button>
-          <span className="w-10 text-right text-xs tabular-nums text-slate-500 dark:text-slate-400">
-            {Math.round(viewTransform.scale * 100)}%
-          </span>
-        </div>
+      <div className="flex items-center gap-1.5 border-l border-slate-200 pl-3 dark:border-slate-800">
+        <button
+          type="button"
+          onClick={() => setScale(viewTransform.scale - 0.25)}
+          className="rounded px-1.5 py-1 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          −
+        </button>
+        <input
+          type="range"
+          min={MIN_SCALE}
+          max={MAX_SCALE}
+          step={0.05}
+          value={viewTransform.scale}
+          onChange={(e) => setScale(Number(e.target.value))}
+          className="w-24 accent-brand-accent"
+        />
+        <button
+          type="button"
+          onClick={() => setScale(viewTransform.scale + 0.25)}
+          className="rounded px-1.5 py-1 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          +
+        </button>
+        <span className="w-9 text-right text-xs tabular-nums text-slate-500 dark:text-slate-400">
+          {Math.round(viewTransform.scale * 100)}%
+        </span>
         <button
           type="button"
           onClick={() => onViewTransformChange({ offsetX: 0, offsetY: 0, scale: 1 })}
-          className="rounded px-2 py-1 text-left text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+          className="rounded px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
         >
-          Reset view
+          Reset
         </button>
       </div>
     </div>
