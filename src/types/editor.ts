@@ -6,8 +6,10 @@ export interface LegendEntry {
   color: string
 }
 
-// 'wall' is a reserved value; any other string references a LegendEntry.id
-export type CellValue = 'wall' | string
+// References a LegendEntry.id — both Paint and Wall tools write the
+// currently active legend color (or erase), so there is no separate
+// "wall" cell kind; walls are just cells drawn via a line gesture.
+export type CellValue = string
 
 // Future: floors: { id: string; name: string; cells: EditorState['cells'] }[]
 export interface EditorState {

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { MouseEvent, PointerEvent, WheelEvent } from 'react'
+import type { MouseEvent, PointerEvent } from 'react'
 import Grid from './Grid'
 import CellRenderer from './CellRenderer'
-import { CELL_SIZE, WALL_COLOR } from './constants'
+import { CELL_SIZE, MAX_SCALE, MIN_SCALE } from './constants'
 import { cellKey, cellsAlongLine, screenToCell, screenToLocal } from './geometry'
 import type { EditorState, LegendEntry, ToolMode, ViewTransform } from '../../types/editor'
 
@@ -15,12 +15,12 @@ interface CanvasProps {
   onViewTransformChange: (viewTransform: ViewTransform) => void
 }
 
-type DragMode = 'none' | 'painting' | 'wall-drawing'
+type DragMode = 'none' | 'painting' | 'wall-drawing' | 'panning'
 
 const FALLBACK_COLOR = '#94a3b8'
+const MIDDLE_BUTTON = 1
 
 function resolveColor(value: string, legend: LegendEntry[]): string {
-  if (value === 'wall') return WALL_COLOR
   return legend.find((entry) => entry.id === value)?.color ?? FALLBACK_COLOR
 }
 
@@ -38,8 +38,16 @@ function Canvas({
 
   const dragModeRef = useRef<DragMode>('none')
   const lastPaintedRef = useRef<string | null>(null)
+  const panLastRef = useRef({ x: 0, y: 0 })
   const [wallStart, setWallStart] = useState<{ x: number; y: number } | null>(null)
   const [wallCurrent, setWallCurrent] = useState<{ x: number; y: number } | null>(null)
+
+  // Kept current via effect so the imperative wheel listener (added once,
+  // see below) always reads fresh values without needing to be re-attached.
+  const viewTransformRef = useRef(viewTransform)
+  useEffect(() => {
+    viewTransformRef.current = viewTransform
+  }, [viewTransform])
 
   useEffect(() => {
     const el = containerRef.current
@@ -52,6 +60,43 @@ function Canvas({
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
+
+  // React attaches onWheel as a passive listener, so calling
+  // preventDefault() from a synthetic handler can't actually stop the
+  // browser's own ctrl/cmd+scroll page zoom — the page zoom fired *and*
+  // our own zoom fired, which is what desynced the grid before. A real
+  // {passive:false} listener is required to suppress the native zoom.
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+
+    const handleNativeWheel = (e: globalThis.WheelEvent) => {
+      e.preventDefault()
+      const current = viewTransformRef.current
+      if (e.ctrlKey || e.metaKey) {
+        const rect = svg.getBoundingClientRect()
+        const cursorX = e.clientX - rect.left
+        const cursorY = e.clientY - rect.top
+        const factor = Math.exp(-e.deltaY * 0.002)
+        const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, current.scale * factor))
+        const ratio = newScale / current.scale
+        onViewTransformChange({
+          scale: newScale,
+          offsetX: cursorX - (cursorX - current.offsetX) * ratio,
+          offsetY: cursorY - (cursorY - current.offsetY) * ratio,
+        })
+      } else {
+        onViewTransformChange({
+          ...current,
+          offsetX: current.offsetX - e.deltaX,
+          offsetY: current.offsetY - e.deltaY,
+        })
+      }
+    }
+
+    svg.addEventListener('wheel', handleNativeWheel, { passive: false })
+    return () => svg.removeEventListener('wheel', handleNativeWheel)
+  }, [onViewTransformChange])
 
   const paintCell = useCallback(
     (x: number, y: number) => {
@@ -81,6 +126,13 @@ function Canvas({
       if (!rect) return
       ;(e.target as Element).setPointerCapture?.(e.pointerId)
 
+      if (e.button === MIDDLE_BUTTON) {
+        e.preventDefault()
+        dragModeRef.current = 'panning'
+        panLastRef.current = { x: e.clientX, y: e.clientY }
+        return
+      }
+
       if (tool === 'paint') {
         const cell = screenToCell(e.clientX, e.clientY, rect, viewTransform)
         dragModeRef.current = 'painting'
@@ -98,6 +150,18 @@ function Canvas({
 
   const handlePointerMove = useCallback(
     (e: PointerEvent<SVGSVGElement>) => {
+      if (dragModeRef.current === 'panning') {
+        const dx = e.clientX - panLastRef.current.x
+        const dy = e.clientY - panLastRef.current.y
+        panLastRef.current = { x: e.clientX, y: e.clientY }
+        onViewTransformChange({
+          ...viewTransform,
+          offsetX: viewTransform.offsetX + dx,
+          offsetY: viewTransform.offsetY + dy,
+        })
+        return
+      }
+
       const rect = svgRef.current?.getBoundingClientRect()
       if (!rect) return
 
@@ -112,21 +176,32 @@ function Canvas({
         setWallCurrent(screenToLocal(e.clientX, e.clientY, rect, viewTransform))
       }
     },
-    [viewTransform, paintCell],
+    [viewTransform, onViewTransformChange, paintCell],
   )
 
   const handlePointerUp = useCallback(() => {
+    if (dragModeRef.current === 'panning') {
+      dragModeRef.current = 'none'
+      return
+    }
     if (dragModeRef.current === 'wall-drawing' && wallStart && wallCurrent) {
       const keys = cellsAlongLine(wallStart.x, wallStart.y, wallCurrent.x, wallCurrent.y)
+      const nextValue = activeLegendId ?? undefined
       const cells = { ...state.cells }
-      for (const key of keys) cells[key] = 'wall'
+      for (const key of keys) {
+        if (nextValue === undefined) {
+          delete cells[key]
+        } else {
+          cells[key] = nextValue
+        }
+      }
       onChange({ ...state, cells })
     }
     dragModeRef.current = 'none'
     lastPaintedRef.current = null
     setWallStart(null)
     setWallCurrent(null)
-  }, [wallStart, wallCurrent, state, onChange])
+  }, [wallStart, wallCurrent, state, onChange, activeLegendId])
 
   const handleContextMenu = useCallback(
     (e: MouseEvent) => {
@@ -146,19 +221,6 @@ function Canvas({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [cancelWallDraw])
 
-  // Pan only — no wheel-zoom. Zoom is a dedicated toolbar control so it
-  // never fights with (or triggers) the browser's own page zoom.
-  const handleWheel = useCallback(
-    (e: WheelEvent<SVGSVGElement>) => {
-      onViewTransformChange({
-        ...viewTransform,
-        offsetX: viewTransform.offsetX - e.deltaX,
-        offsetY: viewTransform.offsetY - e.deltaY,
-      })
-    },
-    [viewTransform, onViewTransformChange],
-  )
-
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden">
       <svg
@@ -168,7 +230,6 @@ function Canvas({
         className={`h-full w-full bg-slate-50 touch-none ${
           tool === 'wall' ? 'cursor-crosshair' : 'cursor-cell'
         }`}
-        onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
