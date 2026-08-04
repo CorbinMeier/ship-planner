@@ -12,3 +12,7 @@ export const PREVIEW_CLASS = 'mix-blend-difference'
 // exceeds this many cells — the canvas is unbounded, so an unenclosed
 // empty area would otherwise fill without limit.
 export const MAX_FILL_CELLS = 4000
+
+// Every plan starts with this group; cells painted before the user creates
+// a group of their own land here.
+export const DEFAULT_GROUP_ID = 'default'

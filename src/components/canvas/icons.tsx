@@ -79,6 +79,50 @@ export function MoonIcon() {
   )
 }
 
+export function SelectIcon() {
+  return (
+    <IconBase>
+      <path d="M5 3.5 12 20l2-6.5L20.5 11 5 3.5Z" strokeLinejoin="round" />
+    </IconBase>
+  )
+}
+
+export function EyedropperIcon() {
+  return (
+    <IconBase>
+      <path d="m14.5 6.5 3 3M4 20l1-4 9-9 3 3-9 9-4 1Z" />
+      <path d="M16 4.5 19.5 8" />
+    </IconBase>
+  )
+}
+
+export function GearIcon() {
+  return (
+    <IconBase>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2v2.2M12 19.8V22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M2 12h2.2M19.8 12H22M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6" />
+    </IconBase>
+  )
+}
+
+export function ExportIcon() {
+  return (
+    <IconBase>
+      <path d="M12 15V3M7 8l5-5 5 5" />
+      <path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+    </IconBase>
+  )
+}
+
+export function ImportIcon() {
+  return (
+    <IconBase>
+      <path d="M12 3v12M7 10l5 5 5-5" />
+      <path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+    </IconBase>
+  )
+}
+
 export function KeyIcon() {
   return (
     <IconBase>

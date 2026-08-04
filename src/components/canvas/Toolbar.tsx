@@ -1,13 +1,15 @@
 import type { ReactNode } from 'react'
 import { MAX_SCALE, MIN_SCALE } from './constants'
-import { CircleIcon, FillIcon, PaintIcon, RectangleIcon, WallIcon } from './icons'
-import type { ToolMode, ViewTransform } from '../../types/editor'
+import { CircleIcon, FillIcon, PaintIcon, RectangleIcon, SelectIcon, WallIcon } from './icons'
+import type { LayerScope, ToolMode, ViewTransform } from '../../types/editor'
 
 interface ToolbarProps {
   tool: ToolMode
   onToolChange: (tool: ToolMode) => void
   viewTransform: ViewTransform
   onViewTransformChange: (viewTransform: ViewTransform) => void
+  layerScope: LayerScope
+  onLayerScopeChange: (scope: LayerScope) => void
 }
 
 const TOOLS: { mode: ToolMode; label: string; icon: ReactNode }[] = [
@@ -16,6 +18,7 @@ const TOOLS: { mode: ToolMode; label: string; icon: ReactNode }[] = [
   { mode: 'circle', label: 'Circle', icon: <CircleIcon /> },
   { mode: 'rectangle', label: 'Rectangle', icon: <RectangleIcon /> },
   { mode: 'fill', label: 'Fill', icon: <FillIcon /> },
+  { mode: 'select', label: 'Select & Move', icon: <SelectIcon /> },
 ]
 
 function ToolButton({
@@ -49,7 +52,14 @@ function ToolButton({
 
 // Rendered inline inside EditorHeader as a single linear bar — no card
 // chrome of its own (border/shadow/background come from the header).
-function Toolbar({ tool, onToolChange, viewTransform, onViewTransformChange }: ToolbarProps) {
+function Toolbar({
+  tool,
+  onToolChange,
+  viewTransform,
+  onViewTransformChange,
+  layerScope,
+  onLayerScopeChange,
+}: ToolbarProps) {
   const setScale = (scale: number) => {
     const clamped = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale))
     onViewTransformChange({ ...viewTransform, scale: clamped })
@@ -104,6 +114,18 @@ function Toolbar({ tool, onToolChange, viewTransform, onViewTransformChange }: T
           Reset
         </button>
       </div>
+
+      {tool === 'select' && (
+        <select
+          value={layerScope}
+          onChange={(e) => onLayerScopeChange(e.target.value as LayerScope)}
+          title="Which layers moving/selecting affects"
+          className="rounded border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+        >
+          <option value="all">All layers</option>
+          <option value="active">This layer</option>
+        </select>
+      )}
     </div>
   )
 }

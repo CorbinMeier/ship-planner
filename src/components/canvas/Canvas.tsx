@@ -15,7 +15,17 @@ import {
   screenToLocal,
 } from './geometry'
 import type { Point } from './geometry'
-import type { EditorState, LegendEntry, ToolMode, ViewTransform } from '../../types/editor'
+import type {
+  CellValue,
+  EditorState,
+  Group,
+  GroupMembership,
+  LayerScope,
+  LayersState,
+  LegendEntry,
+  ToolMode,
+  ViewTransform,
+} from '../../types/editor'
 
 interface CanvasProps {
   state: EditorState
@@ -24,15 +34,52 @@ interface CanvasProps {
   activeLegendId: string | null
   viewTransform: ViewTransform
   onViewTransformChange: (viewTransform: ViewTransform) => void
+  // Ghost layers: the deck immediately below/above, shown faded and
+  // color-washed so the current layer's plan lines up with its neighbors
+  // without being mistaken for editable content.
+  belowCells?: Record<string, CellValue>
+  aboveCells?: Record<string, CellValue>
+  // Groups/select-and-move support. `layers`/`layer` give the select tool
+  // visibility across the whole plan (not just the active layer's cells).
+  layer: number
+  layers: LayersState
+  groups: Group[]
+  groupMembership: GroupMembership
+  layerScope: LayerScope
+  onMoveSelection: (keys: string[], dx: number, dy: number) => void
+  onCopySelection: (keys: string[]) => void
+  onSeparateSelection: (keys: string[]) => void
+  onPickColor: (legendId: string | null) => void
 }
 
-type DragMode = 'none' | 'painting' | 'wall-drawing' | 'circle-drawing' | 'panning'
+type DragMode =
+  | 'none'
+  | 'painting'
+  | 'wall-drawing'
+  | 'circle-drawing'
+  | 'panning'
+  | 'marquee'
+  | 'moving-selection'
 
 const FALLBACK_COLOR = '#94a3b8'
 const MIDDLE_BUTTON = 1
+const GHOST_OPACITY = 0.3
+const BELOW_TINT = 'rgba(59, 130, 246, 0.5)' // blue: layer below
+const ABOVE_TINT = 'rgba(249, 115, 22, 0.5)' // amber: layer above
+const EYEDROPPER_CURSOR =
+  'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\'%3E%3Cpath d=\'m14.5 6.5 3 3M4 20l1-4 9-9 3 3-9 9-4 1Z\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/%3E%3Cpath d=\'m14.5 6.5 3 3M4 20l1-4 9-9 3 3-9 9-4 1Z\' fill=\'none\' stroke=\'%23000\' stroke-width=\'0.75\'/%3E%3C/svg%3E") 2 22, crosshair'
 
 function resolveColor(value: string, legend: LegendEntry[]): string {
   return legend.find((entry) => entry.id === value)?.color ?? FALLBACK_COLOR
+}
+
+function isVisible(value: string, legend: LegendEntry[]): boolean {
+  return legend.find((entry) => entry.id === value)?.visible ?? true
+}
+
+function shiftCoord(coord: string, dx: number, dy: number): string {
+  const [x, y] = coord.split(',').map(Number)
+  return `${x + dx},${y + dy}`
 }
 
 function Canvas({
@@ -42,6 +89,17 @@ function Canvas({
   activeLegendId,
   viewTransform,
   onViewTransformChange,
+  belowCells,
+  aboveCells,
+  layer,
+  layers,
+  groups,
+  groupMembership,
+  layerScope,
+  onMoveSelection,
+  onCopySelection,
+  onSeparateSelection,
+  onPickColor,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -60,6 +118,46 @@ function Canvas({
   const [rectPoints, setRectPoints] = useState<Point[]>([])
   const [rectCursor, setRectCursor] = useState<Point | null>(null)
   const [fillWarning, setFillWarning] = useState(false)
+
+  // Select & move tool. Selected keys are "layer:x,y" composite strings so a
+  // single selection can span every layer when layerScope is "all".
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
+  const [marqueeStart, setMarqueeStart] = useState<Point | null>(null)
+  const [marqueeCurrent, setMarqueeCurrent] = useState<Point | null>(null)
+  const [moveOrigin, setMoveOrigin] = useState<Point | null>(null)
+  const [moveDelta, setMoveDelta] = useState({ dx: 0, dy: 0 })
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+
+  // Left Ctrl acts as a color-picker/eyedropper while held, regardless of tool.
+  const [ctrlActive, setCtrlActive] = useState(false)
+  // Live readout of the key under the cursor while ctrlActive — updates on
+  // every pointer move, not just on click.
+  const [hoverInfo, setHoverInfo] = useState<{ x: number; y: number; label: string; color: string | null } | null>(
+    null,
+  )
+  useEffect(() => {
+    const handleDown = (e: KeyboardEvent) => {
+      if (e.key === 'Control') setCtrlActive(true)
+    }
+    const handleUp = (e: KeyboardEvent) => {
+      if (e.key === 'Control') {
+        setCtrlActive(false)
+        setHoverInfo(null)
+      }
+    }
+    const handleBlur = () => {
+      setCtrlActive(false)
+      setHoverInfo(null)
+    }
+    window.addEventListener('keydown', handleDown)
+    window.addEventListener('keyup', handleUp)
+    window.addEventListener('blur', handleBlur)
+    return () => {
+      window.removeEventListener('keydown', handleDown)
+      window.removeEventListener('keyup', handleUp)
+      window.removeEventListener('blur', handleBlur)
+    }
+  }, [])
 
   // Kept current via effect so the imperative wheel listener (added once,
   // see below) always reads fresh values without needing to be re-attached.
@@ -117,14 +215,46 @@ function Canvas({
     return () => svg.removeEventListener('wheel', handleNativeWheel)
   }, [onViewTransformChange])
 
+  // A cell is "disabled" — and therefore off-limits to the eraser, fill, and
+  // select/move tools — if its legend key is hidden (locally or globally,
+  // already merged into state.legend by the caller) or its group is hidden.
+  const isCellActive = useCallback(
+    (ln: number, coord: string, value: string) => {
+      if (!isVisible(value, state.legend)) return false
+      const groupId = groupMembership[`${ln}:${coord}`]
+      if (groupId) {
+        const group = groups.find((g) => g.id === groupId)
+        if (group && !group.visible) return false
+      }
+      return true
+    },
+    [state.legend, groups, groupMembership],
+  )
+
+  const filterEraseKeys = useCallback(
+    (keys: Iterable<string>) => {
+      const arr = Array.from(keys)
+      if (activeLegendId !== null) return arr
+      return arr.filter((key) => {
+        const current = state.cells[key]
+        return current === undefined || isCellActive(layer, key, current)
+      })
+    },
+    [activeLegendId, state.cells, isCellActive, layer],
+  )
+
   const paintCell = useCallback(
     (x: number, y: number) => {
       const key = cellKey(x, y)
       const nextValue = activeLegendId ?? undefined
-      if (state.cells[key] === nextValue) return
+      const current = state.cells[key]
+      if (current === nextValue) return
+      if (nextValue === undefined && current !== undefined && !isCellActive(layer, key, current)) {
+        return
+      }
       onChange({ ...state, cells: applyCellValue(state.cells, [key], nextValue) })
     },
-    [state, onChange, activeLegendId],
+    [state, onChange, activeLegendId, layer, isCellActive],
   )
 
   const cancelActiveDraw = useCallback(() => {
@@ -135,13 +265,59 @@ function Canvas({
     setCircleCurrent(null)
     setRectPoints([])
     setRectCursor(null)
+    setMarqueeStart(null)
+    setMarqueeCurrent(null)
+    setMoveOrigin(null)
+    setMoveDelta({ dx: 0, dy: 0 })
   }, [])
 
   // Switching tools mid-gesture (e.g. clicking a toolbar button while a
   // rectangle is half-drawn) shouldn't leave a stuck preview behind.
   useEffect(() => {
     cancelActiveDraw()
+    setSelectedKeys(new Set())
+    setContextMenu(null)
   }, [tool, cancelActiveDraw])
+
+  const gatherSelection = useCallback(
+    (minX: number, maxX: number, minY: number, maxY: number) => {
+      const scopeLayers = layerScope === 'all' ? Object.keys(layers).map(Number) : [layer]
+      const found = new Set<string>()
+
+      for (const ln of scopeLayers) {
+        const cells = layers[ln] ?? {}
+        for (const [coord, value] of Object.entries(cells)) {
+          const [x, y] = coord.split(',').map(Number)
+          if (x >= minX && x <= maxX && y >= minY && y <= maxY && isCellActive(ln, coord, value)) {
+            found.add(`${ln}:${coord}`)
+          }
+        }
+      }
+
+      // Moving one cell of a group should carry the whole group with it,
+      // even the parts that fall outside the marquee.
+      const groupIds = new Set(
+        Array.from(found)
+          .map((compositeKey) => groupMembership[compositeKey])
+          .filter((id): id is string => Boolean(id)),
+      )
+      if (groupIds.size > 0) {
+        for (const ln of scopeLayers) {
+          const cells = layers[ln] ?? {}
+          for (const [coord, value] of Object.entries(cells)) {
+            const compositeKey = `${ln}:${coord}`
+            const groupId = groupMembership[compositeKey]
+            if (groupId && groupIds.has(groupId) && isCellActive(ln, coord, value)) {
+              found.add(compositeKey)
+            }
+          }
+        }
+      }
+
+      return found
+    },
+    [layerScope, layers, layer, groupMembership, isCellActive],
+  )
 
   const handlePointerDown = useCallback(
     (e: PointerEvent<SVGSVGElement>) => {
@@ -156,14 +332,38 @@ function Canvas({
         return
       }
 
+      if (ctrlActive) {
+        const cell = screenToCell(e.clientX, e.clientY, rect, viewTransform)
+        const value = state.cells[cellKey(cell.x, cell.y)]
+        onPickColor(value ?? null)
+        return
+      }
+
+      setContextMenu(null)
       const local = screenToLocal(e.clientX, e.clientY, rect, viewTransform)
+
+      if (tool === 'select') {
+        const cell = screenToCell(e.clientX, e.clientY, rect, viewTransform)
+        const compositeKey = `${layer}:${cellKey(cell.x, cell.y)}`
+        if (selectedKeys.has(compositeKey)) {
+          dragModeRef.current = 'moving-selection'
+          setMoveOrigin(cell)
+          setMoveDelta({ dx: 0, dy: 0 })
+        } else {
+          dragModeRef.current = 'marquee'
+          setSelectedKeys(new Set())
+          setMarqueeStart(local)
+          setMarqueeCurrent(local)
+        }
+        return
+      }
 
       if (tool === 'rectangle') {
         if (rectPoints.length < 2) {
           setRectPoints([...rectPoints, local])
         } else {
           const corners = orientedRectCorners(rectPoints[0], rectPoints[1], local)
-          const keys = cellsInPolygon(corners)
+          const keys = filterEraseKeys(cellsInPolygon(corners))
           onChange({ ...state, cells: applyCellValue(state.cells, keys, activeLegendId ?? undefined) })
           setRectPoints([])
         }
@@ -186,6 +386,10 @@ function Canvas({
         setCircleCurrent(local)
       } else if (tool === 'fill') {
         const cell = screenToCell(e.clientX, e.clientY, rect, viewTransform)
+        const startValue = state.cells[cellKey(cell.x, cell.y)]
+        if (activeLegendId === null && startValue !== undefined && !isCellActive(layer, cellKey(cell.x, cell.y), startValue)) {
+          return
+        }
         const filled = floodFillCells(state.cells, cell.x, cell.y)
         if (filled === null) {
           setFillWarning(true)
@@ -198,11 +402,37 @@ function Canvas({
         }
       }
     },
-    [tool, viewTransform, paintCell, state, onChange, activeLegendId, rectPoints],
+    [
+      tool,
+      viewTransform,
+      paintCell,
+      state,
+      onChange,
+      activeLegendId,
+      rectPoints,
+      ctrlActive,
+      onPickColor,
+      selectedKeys,
+      layer,
+      filterEraseKeys,
+      isCellActive,
+    ],
   )
 
   const handlePointerMove = useCallback(
     (e: PointerEvent<SVGSVGElement>) => {
+      if (ctrlActive) {
+        const rect = svgRef.current?.getBoundingClientRect()
+        if (rect) {
+          const cell = screenToCell(e.clientX, e.clientY, rect, viewTransform)
+          const value = state.cells[cellKey(cell.x, cell.y)]
+          const entry = value ? state.legend.find((legendEntry) => legendEntry.id === value) : undefined
+          const label = value ? (entry?.label ?? 'Unknown key') : 'Empty'
+          setHoverInfo({ x: e.clientX, y: e.clientY, label, color: entry?.color ?? null })
+        }
+        return
+      }
+
       if (dragModeRef.current === 'panning') {
         const dx = e.clientX - panLastRef.current.x
         const dy = e.clientY - panLastRef.current.y
@@ -217,6 +447,17 @@ function Canvas({
 
       const rect = svgRef.current?.getBoundingClientRect()
       if (!rect) return
+
+      if (dragModeRef.current === 'marquee') {
+        setMarqueeCurrent(screenToLocal(e.clientX, e.clientY, rect, viewTransform))
+        return
+      }
+
+      if (dragModeRef.current === 'moving-selection' && moveOrigin) {
+        const cell = screenToCell(e.clientX, e.clientY, rect, viewTransform)
+        setMoveDelta({ dx: cell.x - moveOrigin.x, dy: cell.y - moveOrigin.y })
+        return
+      }
 
       if (tool === 'rectangle' && rectPoints.length > 0) {
         setRectCursor(screenToLocal(e.clientX, e.clientY, rect, viewTransform))
@@ -236,20 +477,56 @@ function Canvas({
         setCircleCurrent(screenToLocal(e.clientX, e.clientY, rect, viewTransform))
       }
     },
-    [tool, rectPoints, viewTransform, onViewTransformChange, paintCell],
+    [tool, rectPoints, viewTransform, onViewTransformChange, paintCell, moveOrigin, ctrlActive, state],
   )
+
+  const handlePointerLeave = useCallback(() => {
+    setHoverInfo(null)
+  }, [])
 
   const handlePointerUp = useCallback(() => {
     if (dragModeRef.current === 'panning') {
       dragModeRef.current = 'none'
       return
     }
+
+    if (dragModeRef.current === 'marquee' && marqueeStart && marqueeCurrent) {
+      const minX = Math.floor(Math.min(marqueeStart.x, marqueeCurrent.x))
+      const maxX = Math.floor(Math.max(marqueeStart.x, marqueeCurrent.x))
+      const minY = Math.floor(Math.min(marqueeStart.y, marqueeCurrent.y))
+      const maxY = Math.floor(Math.max(marqueeStart.y, marqueeCurrent.y))
+      setSelectedKeys(gatherSelection(minX, maxX, minY, maxY))
+      setMarqueeStart(null)
+      setMarqueeCurrent(null)
+      dragModeRef.current = 'none'
+      return
+    }
+
+    if (dragModeRef.current === 'moving-selection') {
+      if (moveDelta.dx !== 0 || moveDelta.dy !== 0) {
+        onMoveSelection(Array.from(selectedKeys), moveDelta.dx, moveDelta.dy)
+        setSelectedKeys(
+          (prev) =>
+            new Set(
+              Array.from(prev).map((compositeKey) => {
+                const [ln, coord] = compositeKey.split(':')
+                return `${ln}:${shiftCoord(coord, moveDelta.dx, moveDelta.dy)}`
+              }),
+            ),
+        )
+      }
+      setMoveOrigin(null)
+      setMoveDelta({ dx: 0, dy: 0 })
+      dragModeRef.current = 'none'
+      return
+    }
+
     if (dragModeRef.current === 'wall-drawing' && wallStart && wallCurrent) {
-      const keys = cellsAlongLine(wallStart.x, wallStart.y, wallCurrent.x, wallCurrent.y)
+      const keys = filterEraseKeys(cellsAlongLine(wallStart.x, wallStart.y, wallCurrent.x, wallCurrent.y))
       onChange({ ...state, cells: applyCellValue(state.cells, keys, activeLegendId ?? undefined) })
     } else if (dragModeRef.current === 'circle-drawing' && circleCenter && circleCurrent) {
       const radius = Math.hypot(circleCurrent.x - circleCenter.x, circleCurrent.y - circleCenter.y)
-      const keys = cellsInCircle(circleCenter.x, circleCenter.y, radius)
+      const keys = filterEraseKeys(cellsInCircle(circleCenter.x, circleCenter.y, radius))
       onChange({ ...state, cells: applyCellValue(state.cells, keys, activeLegendId ?? undefined) })
     }
     dragModeRef.current = 'none'
@@ -258,7 +535,22 @@ function Canvas({
     setWallCurrent(null)
     setCircleCenter(null)
     setCircleCurrent(null)
-  }, [wallStart, wallCurrent, circleCenter, circleCurrent, state, onChange, activeLegendId])
+  }, [
+    wallStart,
+    wallCurrent,
+    circleCenter,
+    circleCurrent,
+    state,
+    onChange,
+    activeLegendId,
+    marqueeStart,
+    marqueeCurrent,
+    gatherSelection,
+    moveDelta,
+    selectedKeys,
+    onMoveSelection,
+    filterEraseKeys,
+  ])
 
   const isDrawInProgress = useCallback(
     () => dragModeRef.current === 'wall-drawing' || dragModeRef.current === 'circle-drawing' || rectPoints.length > 0,
@@ -268,20 +560,35 @@ function Canvas({
   const handleContextMenu = useCallback(
     (e: MouseEvent) => {
       e.preventDefault()
-      if (isDrawInProgress()) cancelActiveDraw()
+      if (isDrawInProgress()) {
+        cancelActiveDraw()
+        return
+      }
+      if (tool === 'select' && selectedKeys.size > 0) {
+        setContextMenu({ x: e.clientX, y: e.clientY })
+      }
     },
-    [cancelActiveDraw, isDrawInProgress],
+    [cancelActiveDraw, isDrawInProgress, tool, selectedKeys],
   )
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isDrawInProgress()) {
-        cancelActiveDraw()
+      if (e.key === 'Escape') {
+        if (isDrawInProgress()) cancelActiveDraw()
+        setSelectedKeys(new Set())
+        setContextMenu(null)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [cancelActiveDraw, isDrawInProgress])
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const dismiss = () => setContextMenu(null)
+    window.addEventListener('click', dismiss)
+    return () => window.removeEventListener('click', dismiss)
+  }, [contextMenu])
 
   const circleRadius =
     circleCenter && circleCurrent
@@ -293,6 +600,15 @@ function Canvas({
       ? orientedRectCorners(rectPoints[0], rectPoints[1], rectCursor)
       : null
 
+  const selectedCoordsOnLayer = Array.from(selectedKeys)
+    .filter((compositeKey) => compositeKey.startsWith(`${layer}:`))
+    .map((compositeKey) => compositeKey.slice(compositeKey.indexOf(':') + 1))
+
+  const movePreviewKeys =
+    dragModeRef.current === 'moving-selection'
+      ? selectedCoordsOnLayer.map((coord) => shiftCoord(coord, moveDelta.dx, moveDelta.dy))
+      : []
+
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden">
       <svg
@@ -300,11 +616,17 @@ function Canvas({
         width={size.width}
         height={size.height}
         className={`h-full w-full touch-none bg-slate-50 dark:bg-slate-900 ${
-          tool === 'wall' || tool === 'circle' || tool === 'rectangle' ? 'cursor-crosshair' : 'cursor-cell'
+          tool === 'wall' || tool === 'circle' || tool === 'rectangle'
+            ? 'cursor-crosshair'
+            : tool === 'select'
+              ? 'cursor-default'
+              : 'cursor-cell'
         }`}
+        style={ctrlActive ? { cursor: EYEDROPPER_CURSOR } : undefined}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
         onContextMenu={handleContextMenu}
       >
         <g
@@ -315,10 +637,66 @@ function Canvas({
             viewportWidth={size.width}
             viewportHeight={size.height}
           />
-          {Object.entries(state.cells).map(([key, value]) => {
-            const [x, y] = key.split(',').map(Number)
-            return <CellRenderer key={key} x={x} y={y} color={resolveColor(value, state.legend)} />
-          })}
+          {belowCells &&
+            Object.entries(belowCells)
+              .filter(([coord, value]) => isCellActive(layer - 1, coord, value))
+              .map(([key, value]) => {
+                const [x, y] = key.split(',').map(Number)
+                return (
+                  <CellRenderer
+                    key={`below-${key}`}
+                    x={x}
+                    y={y}
+                    color={resolveColor(value, state.legend)}
+                    opacity={GHOST_OPACITY}
+                    tint={BELOW_TINT}
+                  />
+                )
+              })}
+
+          {aboveCells &&
+            Object.entries(aboveCells)
+              .filter(([coord, value]) => isCellActive(layer + 1, coord, value))
+              .map(([key, value]) => {
+                const [x, y] = key.split(',').map(Number)
+                return (
+                  <CellRenderer
+                    key={`above-${key}`}
+                    x={x}
+                    y={y}
+                    color={resolveColor(value, state.legend)}
+                    opacity={GHOST_OPACITY}
+                    tint={ABOVE_TINT}
+                  />
+                )
+              })}
+
+          {Object.entries(state.cells)
+            .filter(([coord, value]) => isCellActive(layer, coord, value))
+            .map(([key, value]) => {
+              const [x, y] = key.split(',').map(Number)
+              return <CellRenderer key={key} x={x} y={y} color={resolveColor(value, state.legend)} />
+            })}
+
+          {selectedCoordsOnLayer.length > 0 && dragModeRef.current !== 'moving-selection' && (
+            <PreviewCells keys={selectedCoordsOnLayer} />
+          )}
+
+          {movePreviewKeys.length > 0 && <PreviewCells keys={movePreviewKeys} />}
+
+          {marqueeStart && marqueeCurrent && (
+            <rect
+              x={Math.min(marqueeStart.x, marqueeCurrent.x) * CELL_SIZE}
+              y={Math.min(marqueeStart.y, marqueeCurrent.y) * CELL_SIZE}
+              width={Math.abs(marqueeCurrent.x - marqueeStart.x) * CELL_SIZE}
+              height={Math.abs(marqueeCurrent.y - marqueeStart.y) * CELL_SIZE}
+              fill="rgba(56, 189, 248, 0.15)"
+              stroke={PREVIEW_STROKE}
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+              className={PREVIEW_CLASS}
+            />
+          )}
 
           {wallStart && wallCurrent && (
             <>
@@ -379,9 +757,58 @@ function Canvas({
         </g>
       </svg>
 
+      {ctrlActive && hoverInfo && (
+        <div
+          className="pointer-events-none fixed z-30 flex items-center gap-1.5 rounded border border-slate-200 bg-white/95 px-2 py-1 text-xs font-medium text-slate-700 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-200"
+          style={{ left: hoverInfo.x + 18, top: hoverInfo.y + 18 }}
+        >
+          <span
+            className="h-3 w-3 shrink-0 rounded border border-slate-300 dark:border-slate-600"
+            style={
+              hoverInfo.color
+                ? { backgroundColor: hoverInfo.color }
+                : {
+                    backgroundImage:
+                      'repeating-linear-gradient(45deg,#e2e8f0 0,#e2e8f0 2px,transparent 2px,transparent 4px)',
+                  }
+            }
+          />
+          {hoverInfo.label}
+        </div>
+      )}
+
       {fillWarning && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded bg-red-600 px-3 py-1 text-sm text-white shadow">
           Can't fill an unbounded region
+        </div>
+      )}
+
+      {contextMenu && (
+        <div
+          className="absolute z-20 w-40 rounded border border-slate-200 bg-white p-1 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-800"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              onCopySelection(Array.from(selectedKeys))
+              setContextMenu(null)
+            }}
+            className="w-full rounded px-2 py-1 text-left text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            Copy
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onSeparateSelection(Array.from(selectedKeys))
+              setContextMenu(null)
+            }}
+            className="w-full rounded px-2 py-1 text-left text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            Separate into new group
+          </button>
         </div>
       )}
     </div>
