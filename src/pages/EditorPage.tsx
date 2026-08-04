@@ -2,6 +2,8 @@ import { useState } from 'react'
 import Canvas from '../components/canvas/Canvas'
 import Toolbar from '../components/canvas/Toolbar'
 import Legend from '../components/canvas/Legend'
+import EditorHeader from '../components/canvas/EditorHeader'
+import { useTheme } from '../lib/useTheme'
 import type { EditorState, LegendEntry, ToolMode, ViewTransform } from '../types/editor'
 
 function createId() {
@@ -16,6 +18,7 @@ const initialState: EditorState = {
 // future: floor switcher goes here, alongside a floors[] list;
 // EditorState would become keyed by floorId
 function EditorPage() {
+  const { theme, toggleTheme } = useTheme()
   const [state, setState] = useState<EditorState>(initialState)
   const [tool, setTool] = useState<ToolMode>('paint')
   const [activeLegendId, setActiveLegendId] = useState<string | null>('room')
@@ -37,28 +40,31 @@ function EditorPage() {
   }
 
   return (
-    <div className="relative flex h-screen flex-col">
-      <Canvas
-        state={state}
-        onChange={setState}
-        tool={tool}
-        activeLegendId={activeLegendId}
-        viewTransform={viewTransform}
-        onViewTransformChange={setViewTransform}
-      />
-      <Toolbar
-        tool={tool}
-        onToolChange={setTool}
-        viewTransform={viewTransform}
-        onViewTransformChange={setViewTransform}
-      />
-      <Legend
-        legend={state.legend}
-        activeLegendId={activeLegendId}
-        onSelect={setActiveLegendId}
-        onAdd={handleAddLegendEntry}
-        onRemove={handleRemoveLegendEntry}
-      />
+    <div className="flex h-screen flex-col">
+      <EditorHeader theme={theme} onToggleTheme={toggleTheme} />
+      <div className="relative flex-1">
+        <Canvas
+          state={state}
+          onChange={setState}
+          tool={tool}
+          activeLegendId={activeLegendId}
+          viewTransform={viewTransform}
+          onViewTransformChange={setViewTransform}
+        />
+        <Toolbar
+          tool={tool}
+          onToolChange={setTool}
+          viewTransform={viewTransform}
+          onViewTransformChange={setViewTransform}
+        />
+        <Legend
+          legend={state.legend}
+          activeLegendId={activeLegendId}
+          onSelect={setActiveLegendId}
+          onAdd={handleAddLegendEntry}
+          onRemove={handleRemoveLegendEntry}
+        />
+      </div>
     </div>
   )
 }

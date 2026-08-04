@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Manual (class-based) dark mode instead of following OS preference only,
+   so the in-app toggle always wins. Toggled on <html> by useTheme. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-brand-primary: #0f172a; /* Slate 900 */
   --color-brand-secondary: #334155; /* Slate 700 */
@@ -9,6 +13,6 @@
 
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
   }
 }

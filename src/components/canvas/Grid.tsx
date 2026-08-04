@@ -28,7 +28,7 @@ function Grid({ viewTransform, viewportWidth, viewportHeight }: GridProps) {
           <path
             d={`M ${CELL_SIZE} 0 L 0 0 0 ${CELL_SIZE}`}
             fill="none"
-            className="stroke-slate-300"
+            className="stroke-slate-300 dark:stroke-slate-700"
             strokeWidth={1}
           />
         </pattern>
@@ -37,7 +37,7 @@ function Grid({ viewTransform, viewportWidth, viewportHeight }: GridProps) {
           <path
             d={`M ${majorSize} 0 L 0 0 0 ${majorSize}`}
             fill="none"
-            className="stroke-slate-400"
+            className="stroke-slate-400 dark:stroke-slate-600"
             strokeWidth={1}
           />
         </pattern>

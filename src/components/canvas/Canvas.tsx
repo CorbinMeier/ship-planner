@@ -299,7 +299,7 @@ function Canvas({
         ref={svgRef}
         width={size.width}
         height={size.height}
-        className={`h-full w-full bg-slate-50 touch-none ${
+        className={`h-full w-full touch-none bg-slate-50 dark:bg-slate-900 ${
           tool === 'wall' || tool === 'circle' || tool === 'rectangle' ? 'cursor-crosshair' : 'cursor-cell'
         }`}
         onPointerDown={handlePointerDown}

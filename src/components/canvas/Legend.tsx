@@ -21,14 +21,18 @@ function Legend({ legend, activeLegendId, onSelect, onAdd, onRemove }: LegendPro
   }
 
   return (
-    <div className="absolute right-4 top-4 flex w-56 flex-col gap-2 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-md">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Key</p>
+    <div className="absolute right-4 top-4 flex w-56 flex-col gap-2 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+        Legend
+      </p>
 
       <button
         type="button"
         onClick={() => onSelect(null)}
         className={`flex items-center gap-2 rounded px-2 py-1 text-left text-sm ${
-          activeLegendId === null ? 'bg-brand-accent text-white' : 'hover:bg-slate-100'
+          activeLegendId === null
+            ? 'bg-brand-accent text-white'
+            : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800'
         }`}
       >
         <span className="h-4 w-4 rounded border border-slate-300 bg-[repeating-linear-gradient(45deg,#e2e8f0_0,#e2e8f0_2px,transparent_2px,transparent_4px)]" />
@@ -42,7 +46,9 @@ function Legend({ legend, activeLegendId, onSelect, onAdd, onRemove }: LegendPro
               type="button"
               onClick={() => onSelect(entry.id)}
               className={`flex flex-1 items-center gap-2 rounded px-2 py-1 text-left text-sm ${
-                activeLegendId === entry.id ? 'bg-brand-accent text-white' : 'hover:bg-slate-100'
+                activeLegendId === entry.id
+                  ? 'bg-brand-accent text-white'
+                  : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800'
               }`}
             >
               <span
@@ -55,7 +61,7 @@ function Legend({ legend, activeLegendId, onSelect, onAdd, onRemove }: LegendPro
               type="button"
               onClick={() => onRemove(entry.id)}
               aria-label={`Remove ${entry.label}`}
-              className="rounded px-1 text-xs text-slate-400 hover:text-red-500"
+              className="rounded px-1 text-xs text-slate-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400"
             >
               ×
             </button>
@@ -63,12 +69,12 @@ function Legend({ legend, activeLegendId, onSelect, onAdd, onRemove }: LegendPro
         ))}
       </div>
 
-      <div className="mt-1 flex items-center gap-1 border-t border-slate-200 pt-2">
+      <div className="mt-1 flex items-center gap-1 border-t border-slate-200 pt-2 dark:border-slate-800">
         <input
           type="color"
           value={color}
           onChange={(e) => setColor(e.target.value)}
-          className="h-7 w-7 shrink-0 cursor-pointer rounded border border-slate-300"
+          className="h-7 w-7 shrink-0 cursor-pointer rounded border border-slate-300 dark:border-slate-700"
         />
         <input
           type="text"
@@ -76,7 +82,7 @@ function Legend({ legend, activeLegendId, onSelect, onAdd, onRemove }: LegendPro
           onChange={(e) => setLabel(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
           placeholder="New room type"
-          className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+          className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
         />
         <button
           type="button"
