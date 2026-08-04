@@ -1,0 +1,36 @@
+{
+  "name": "ship-planner",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:backend": "npm run build && wrangler pages dev dist --compatibility-date=2026-06-01 --port 8788",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply ship-planner-dev --local",
+    "db:migrate:remote": "wrangler d1 migrations apply ship-planner-dev --remote"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.13.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.2",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260804.1",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "drizzle-kit": "^0.31.10",
+    "oxlint": "^1.75.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.0"
+  }
+}

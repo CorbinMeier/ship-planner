@@ -1,0 +1,8 @@
+name = "ship-planner"
+compatibility_date = "2026-06-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ship-planner-dev"
+database_id = "7fa39a6b-7b88-4a71-84fb-ab3ade35b415"
+migrations_dir = "drizzle"
