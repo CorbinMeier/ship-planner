@@ -39,12 +39,21 @@ function Toolbar({ tool, onToolChange, viewTransform, onViewTransformChange }: T
 
   return (
     <div className="absolute left-4 top-4 flex flex-col gap-2 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-md">
-      <div className="flex gap-1">
+      <div className="flex flex-wrap gap-1">
         <ToggleButton active={tool === 'paint'} onClick={() => onToolChange('paint')}>
           Paint
         </ToggleButton>
         <ToggleButton active={tool === 'wall'} onClick={() => onToolChange('wall')}>
           Wall
+        </ToggleButton>
+        <ToggleButton active={tool === 'circle'} onClick={() => onToolChange('circle')}>
+          Circle
+        </ToggleButton>
+        <ToggleButton active={tool === 'rectangle'} onClick={() => onToolChange('rectangle')}>
+          Rectangle
+        </ToggleButton>
+        <ToggleButton active={tool === 'fill'} onClick={() => onToolChange('fill')}>
+          Fill
         </ToggleButton>
       </div>
 

@@ -1,4 +1,4 @@
-export type ToolMode = 'paint' | 'wall'
+export type ToolMode = 'paint' | 'wall' | 'circle' | 'rectangle' | 'fill'
 
 export interface LegendEntry {
   id: string
