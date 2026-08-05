@@ -337,6 +337,7 @@ function EditorPage() {
           layers={layers}
           groups={groups}
           groupMembership={groupMembership}
+          activeGroupId={activeGroupId}
           layerScope={layerScope}
           onMoveSelection={handleMoveSelection}
           onCopySelection={handleCopySelection}

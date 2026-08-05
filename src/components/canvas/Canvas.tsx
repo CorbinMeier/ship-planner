@@ -3,7 +3,7 @@ import type { MouseEvent, PointerEvent } from 'react'
 import Grid from './Grid'
 import CellRenderer from './CellRenderer'
 import PreviewCells from './PreviewCells'
-import { CELL_SIZE, MAX_SCALE, MIN_SCALE, PREVIEW_CLASS, PREVIEW_STROKE } from './constants'
+import { CELL_SIZE, DEFAULT_GROUP_ID, MAX_SCALE, MIN_SCALE, PREVIEW_CLASS, PREVIEW_STROKE } from './constants'
 import { applyCellValue, floodFillCells } from './cellOps'
 import {
   cellKey,
@@ -45,6 +45,7 @@ interface CanvasProps {
   layers: LayersState
   groups: Group[]
   groupMembership: GroupMembership
+  activeGroupId: string
   layerScope: LayerScope
   onMoveSelection: (keys: string[], dx: number, dy: number) => void
   onCopySelection: (keys: string[]) => void
@@ -95,6 +96,7 @@ function Canvas({
   layers,
   groups,
   groupMembership,
+  activeGroupId,
   layerScope,
   onMoveSelection,
   onCopySelection,
@@ -231,16 +233,28 @@ function Canvas({
     [state.legend, groups, groupMembership],
   )
 
+  // Erasing is further restricted to the active group: with a group
+  // selected, cells belonging to a different group are off-limits so a
+  // stray erase stroke can't reach into someone else's group.
+  const isEraseAllowed = useCallback(
+    (ln: number, coord: string, value: string) => {
+      if (!isCellActive(ln, coord, value)) return false
+      const groupId = groupMembership[`${ln}:${coord}`] ?? DEFAULT_GROUP_ID
+      return groupId === activeGroupId
+    },
+    [isCellActive, groupMembership, activeGroupId],
+  )
+
   const filterEraseKeys = useCallback(
     (keys: Iterable<string>) => {
       const arr = Array.from(keys)
       if (activeLegendId !== null) return arr
       return arr.filter((key) => {
         const current = state.cells[key]
-        return current === undefined || isCellActive(layer, key, current)
+        return current === undefined || isEraseAllowed(layer, key, current)
       })
     },
-    [activeLegendId, state.cells, isCellActive, layer],
+    [activeLegendId, state.cells, isEraseAllowed, layer],
   )
 
   const paintCell = useCallback(
@@ -249,12 +263,12 @@ function Canvas({
       const nextValue = activeLegendId ?? undefined
       const current = state.cells[key]
       if (current === nextValue) return
-      if (nextValue === undefined && current !== undefined && !isCellActive(layer, key, current)) {
+      if (nextValue === undefined && current !== undefined && !isEraseAllowed(layer, key, current)) {
         return
       }
       onChange({ ...state, cells: applyCellValue(state.cells, [key], nextValue) })
     },
-    [state, onChange, activeLegendId, layer, isCellActive],
+    [state, onChange, activeLegendId, layer, isEraseAllowed],
   )
 
   const cancelActiveDraw = useCallback(() => {
@@ -387,7 +401,7 @@ function Canvas({
       } else if (tool === 'fill') {
         const cell = screenToCell(e.clientX, e.clientY, rect, viewTransform)
         const startValue = state.cells[cellKey(cell.x, cell.y)]
-        if (activeLegendId === null && startValue !== undefined && !isCellActive(layer, cellKey(cell.x, cell.y), startValue)) {
+        if (activeLegendId === null && startValue !== undefined && !isEraseAllowed(layer, cellKey(cell.x, cell.y), startValue)) {
           return
         }
         const filled = floodFillCells(state.cells, cell.x, cell.y)
@@ -415,7 +429,7 @@ function Canvas({
       selectedKeys,
       layer,
       filterEraseKeys,
-      isCellActive,
+      isEraseAllowed,
     ],
   )
 
