@@ -1,4 +1,4 @@
-export type ToolMode = 'paint' | 'wall' | 'circle' | 'rectangle' | 'fill' | 'select'
+export type ToolMode = 'paint' | 'wall' | 'circle' | 'rectangle' | 'fill' | 'select' | 'stamp'
 
 export interface LegendEntry {
   id: string
@@ -51,4 +51,15 @@ export interface ShipPlan {
   groups: Group[]
   layers: LayersState
   groupMembership: GroupMembership
+}
+
+// A saved "component": a named snapshot of a single-layer cell selection
+// that the stamp tool can drop anywhere, any number of times. Stored
+// locally (like localHidden) — it's a personal library, not part of the
+// shared plan. Coordinates are relative to the selection's top-left cell.
+export interface Stamp {
+  id: string
+  name: string
+  legend: LegendEntry[]
+  cells: Record<string, CellValue>
 }

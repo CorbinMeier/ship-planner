@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import Toolbar from './Toolbar'
 import LayerSwitcher from './LayerSwitcher'
 import ImportExportControls from './ImportExportControls'
-import { GearIcon, KeyIcon, MoonIcon, SunIcon } from './icons'
+import { GearIcon, KeyIcon, MoonIcon, StampIcon, SunIcon } from './icons'
 import type { LayerScope, ToolMode, ViewTransform } from '../../types/editor'
 
 interface EditorHeaderProps {
@@ -18,6 +18,8 @@ interface EditorHeaderProps {
   onToggleLegend: () => void
   groupsVisible: boolean
   onToggleGroups: () => void
+  componentsVisible: boolean
+  onToggleComponents: () => void
   theme: 'light' | 'dark'
   onToggleTheme: () => void
   onExport: () => void
@@ -37,6 +39,8 @@ function EditorHeader({
   onToggleLegend,
   groupsVisible,
   onToggleGroups,
+  componentsVisible,
+  onToggleComponents,
   theme,
   onToggleTheme,
   onExport,
@@ -94,6 +98,21 @@ function EditorHeader({
           }`}
         >
           <GearIcon />
+        </button>
+
+        <button
+          type="button"
+          onClick={onToggleComponents}
+          title="Toggle saved components"
+          aria-label={componentsVisible ? 'Hide components' : 'Show components'}
+          aria-pressed={componentsVisible}
+          className={`rounded p-1.5 ${
+            componentsVisible
+              ? 'bg-brand-accent text-white'
+              : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <StampIcon />
         </button>
 
         <button

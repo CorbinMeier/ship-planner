@@ -123,6 +123,16 @@ export function ImportIcon() {
   )
 }
 
+export function StampIcon() {
+  return (
+    <IconBase>
+      <path d="M8 14h8l1.5 4H6.5L8 14Z" />
+      <path d="M9 14V8a3 3 0 0 1 6 0v6" />
+      <path d="M5 21h14" />
+    </IconBase>
+  )
+}
+
 export function KeyIcon() {
   return (
     <IconBase>

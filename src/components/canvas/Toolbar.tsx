@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { MAX_SCALE, MIN_SCALE } from './constants'
-import { CircleIcon, FillIcon, PaintIcon, RectangleIcon, SelectIcon, WallIcon } from './icons'
+import { CircleIcon, FillIcon, PaintIcon, RectangleIcon, SelectIcon, StampIcon, WallIcon } from './icons'
 import type { LayerScope, ToolMode, ViewTransform } from '../../types/editor'
 
 interface ToolbarProps {
@@ -19,6 +19,7 @@ const TOOLS: { mode: ToolMode; label: string; icon: ReactNode }[] = [
   { mode: 'rectangle', label: 'Rectangle', icon: <RectangleIcon /> },
   { mode: 'fill', label: 'Fill', icon: <FillIcon /> },
   { mode: 'select', label: 'Select & Move', icon: <SelectIcon /> },
+  { mode: 'stamp', label: 'Stamp component', icon: <StampIcon /> },
 ]
 
 function ToolButton({

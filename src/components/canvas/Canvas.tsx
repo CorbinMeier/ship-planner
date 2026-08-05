@@ -23,6 +23,7 @@ import type {
   LayerScope,
   LayersState,
   LegendEntry,
+  Stamp,
   ToolMode,
   ViewTransform,
 } from '../../types/editor'
@@ -50,7 +51,12 @@ interface CanvasProps {
   onMoveSelection: (keys: string[], dx: number, dy: number) => void
   onCopySelection: (keys: string[]) => void
   onSeparateSelection: (keys: string[]) => void
+  onSaveComponent: (keys: string[]) => void
   onPickColor: (legendId: string | null) => void
+  // Active stamp for the 'stamp' tool; placing writes its cells at the
+  // clicked origin into a brand-new group, like a mini import.
+  stamp: Stamp | null
+  onPlaceStamp: (stamp: Stamp, originX: number, originY: number) => void
 }
 
 type DragMode =
@@ -101,7 +107,10 @@ function Canvas({
   onMoveSelection,
   onCopySelection,
   onSeparateSelection,
+  onSaveComponent,
   onPickColor,
+  stamp,
+  onPlaceStamp,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -137,6 +146,9 @@ function Canvas({
   const [hoverInfo, setHoverInfo] = useState<{ x: number; y: number; label: string; color: string | null } | null>(
     null,
   )
+  // Cell under the cursor while the stamp tool is armed, used to preview
+  // where the stamp's cells will land before the click commits them.
+  const [stampHoverCell, setStampHoverCell] = useState<Point | null>(null)
   useEffect(() => {
     const handleDown = (e: KeyboardEvent) => {
       if (e.key === 'Control') setCtrlActive(true)
@@ -283,6 +295,7 @@ function Canvas({
     setMarqueeCurrent(null)
     setMoveOrigin(null)
     setMoveDelta({ dx: 0, dy: 0 })
+    setStampHoverCell(null)
   }, [])
 
   // Switching tools mid-gesture (e.g. clicking a toolbar button while a
@@ -381,6 +394,13 @@ function Canvas({
         return
       }
 
+      if (tool === 'stamp') {
+        if (!stamp) return
+        const cell = screenToCell(e.clientX, e.clientY, rect, viewTransform)
+        onPlaceStamp(stamp, cell.x, cell.y)
+        return
+      }
+
       if (tool === 'rectangle') {
         if (rectPoints.length < 2) {
           setRectPoints([...rectPoints, local])
@@ -439,6 +459,8 @@ function Canvas({
       layer,
       filterEraseKeys,
       isEraseAllowed,
+      stamp,
+      onPlaceStamp,
     ],
   )
 
@@ -470,6 +492,11 @@ function Canvas({
 
       const rect = svgRef.current?.getBoundingClientRect()
       if (!rect) return
+
+      if (tool === 'stamp') {
+        setStampHoverCell(screenToCell(e.clientX, e.clientY, rect, viewTransform))
+        return
+      }
 
       if (dragModeRef.current === 'marquee') {
         setMarqueeCurrent(screenToLocal(e.clientX, e.clientY, rect, viewTransform))
@@ -505,6 +532,7 @@ function Canvas({
 
   const handlePointerLeave = useCallback(() => {
     setHoverInfo(null)
+    setStampHoverCell(null)
   }, [])
 
   const handlePointerUp = useCallback(() => {
@@ -632,6 +660,11 @@ function Canvas({
       ? selectedCoordsOnLayer.map((coord) => shiftCoord(coord, moveDelta.dx, moveDelta.dy))
       : []
 
+  const stampPreviewKeys =
+    tool === 'stamp' && stamp && stampHoverCell
+      ? Object.keys(stamp.cells).map((coord) => shiftCoord(coord, stampHoverCell.x, stampHoverCell.y))
+      : []
+
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden">
       <svg
@@ -641,7 +674,7 @@ function Canvas({
         className={`h-full w-full touch-none bg-slate-50 dark:bg-slate-900 ${
           tool === 'wall' || tool === 'circle' || tool === 'rectangle'
             ? 'cursor-crosshair'
-            : tool === 'select'
+            : tool === 'select' || tool === 'stamp'
               ? 'cursor-default'
               : 'cursor-cell'
         }`}
@@ -706,6 +739,8 @@ function Canvas({
           )}
 
           {movePreviewKeys.length > 0 && <PreviewCells keys={movePreviewKeys} />}
+
+          {stampPreviewKeys.length > 0 && <PreviewCells keys={stampPreviewKeys} />}
 
           {marqueeStart && marqueeCurrent && (
             <rect
@@ -831,6 +866,16 @@ function Canvas({
             className="w-full rounded px-2 py-1 text-left text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
           >
             Separate into new group
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onSaveComponent(Array.from(selectedKeys))
+              setContextMenu(null)
+            }}
+            className="w-full rounded px-2 py-1 text-left text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            Save as component
           </button>
         </div>
       )}

@@ -4,8 +4,10 @@ import Legend from '../components/canvas/Legend'
 import GroupsPanel from '../components/canvas/GroupsPanel'
 import EditorHeader from '../components/canvas/EditorHeader'
 import { useTheme } from '../lib/useTheme'
+import ComponentsPanel from '../components/canvas/ComponentsPanel'
 import { DEFAULT_GROUP_ID } from '../components/canvas/constants'
 import { createId, downloadPlan, mergeImportedPlan, parsePlan } from '../lib/plan'
+import { loadStamps, saveStamps } from '../lib/stamps'
 import type {
   EditorState,
   Group,
@@ -14,6 +16,7 @@ import type {
   LayersState,
   LegendEntry,
   ShipPlan,
+  Stamp,
   ToolMode,
   ViewTransform,
 } from '../types/editor'
@@ -40,6 +43,9 @@ function EditorPage() {
   const [activeLegendId, setActiveLegendId] = useState<string | null>('room')
   const [legendVisible, setLegendVisible] = useState(true)
   const [groupsVisible, setGroupsVisible] = useState(false)
+  const [stamps, setStamps] = useState<Stamp[]>(() => loadStamps())
+  const [activeStampId, setActiveStampId] = useState<string | null>(null)
+  const [componentsVisible, setComponentsVisible] = useState(false)
   const [pickerToast, setPickerToast] = useState<string | null>(null)
   const [viewTransform, setViewTransform] = useState<ViewTransform>({
     offsetX: 0,
@@ -281,6 +287,108 @@ function EditorPage() {
     })
   }
 
+  // --- Saved components (stamp tool) ---
+
+  // Captures the selection's cells on the current layer only — a component
+  // is a single-layer stencil — normalized so its top-left cell is (0,0).
+  const handleSaveComponent = (keys: string[]) => {
+    const layerPrefix = `${layer}:`
+    const layerCells = layers[layer] ?? {}
+    const coords = keys
+      .filter((compositeKey) => compositeKey.startsWith(layerPrefix))
+      .map((compositeKey) => compositeKey.slice(layerPrefix.length))
+      .filter((coord) => layerCells[coord] !== undefined)
+
+    if (coords.length === 0) {
+      window.alert('Select cells on the current layer to save as a component.')
+      return
+    }
+
+    const name = window.prompt('Component name?', 'Component')
+    if (!name) return
+
+    let minX = Infinity
+    let minY = Infinity
+    for (const coord of coords) {
+      const [x, y] = coord.split(',').map(Number)
+      minX = Math.min(minX, x)
+      minY = Math.min(minY, y)
+    }
+
+    const cells: Record<string, string> = {}
+    const usedIds = new Set<string>()
+    for (const coord of coords) {
+      const [x, y] = coord.split(',').map(Number)
+      const value = layerCells[coord]
+      cells[`${x - minX},${y - minY}`] = value
+      usedIds.add(value)
+    }
+
+    const stamp: Stamp = {
+      id: createId(),
+      name,
+      legend: legend.filter((entry) => usedIds.has(entry.id)),
+      cells,
+    }
+    setStamps((prev) => {
+      const next = [...prev, stamp]
+      saveStamps(next)
+      return next
+    })
+    setComponentsVisible(true)
+  }
+
+  const handleSelectStamp = (id: string | null) => setActiveStampId(id)
+
+  const handleRenameStamp = (id: string, name: string) => {
+    setStamps((prev) => {
+      const next = prev.map((stamp) => (stamp.id === id ? { ...stamp, name } : stamp))
+      saveStamps(next)
+      return next
+    })
+  }
+
+  const handleDeleteStamp = (id: string) => {
+    setStamps((prev) => {
+      const next = prev.filter((stamp) => stamp.id !== id)
+      saveStamps(next)
+      return next
+    })
+    setActiveStampId((current) => (current === id ? null : current))
+  }
+
+  // Places a stamp's cells at the clicked origin on the current layer as a
+  // brand-new group — bringing along any legend entries it references that
+  // no longer exist locally, same idea as an import.
+  const handlePlaceStamp = (stamp: Stamp, originX: number, originY: number) => {
+    setLegend((prev) => {
+      const existingIds = new Set(prev.map((entry) => entry.id))
+      const missing = stamp.legend.filter((entry) => !existingIds.has(entry.id))
+      return missing.length > 0 ? [...prev, ...missing] : prev
+    })
+
+    const newGroupId = createId()
+    setGroups((prev) => [...prev, { id: newGroupId, name: stamp.name, visible: true }])
+
+    setLayers((prev) => {
+      const cells = { ...(prev[layer] ?? {}) }
+      for (const [coord, value] of Object.entries(stamp.cells)) {
+        const [x, y] = coord.split(',').map(Number)
+        cells[`${x + originX},${y + originY}`] = value
+      }
+      return { ...prev, [layer]: cells }
+    })
+
+    setGroupMembership((prev) => {
+      const next = { ...prev }
+      for (const coord of Object.keys(stamp.cells)) {
+        const [x, y] = coord.split(',').map(Number)
+        next[`${layer}:${x + originX},${y + originY}`] = newGroupId
+      }
+      return next
+    })
+  }
+
   // --- Import / export ---
 
   const handleExport = () => {
@@ -318,6 +426,8 @@ function EditorPage() {
         onToggleLegend={() => setLegendVisible((visible) => !visible)}
         groupsVisible={groupsVisible}
         onToggleGroups={() => setGroupsVisible((visible) => !visible)}
+        componentsVisible={componentsVisible}
+        onToggleComponents={() => setComponentsVisible((visible) => !visible)}
         theme={theme}
         onToggleTheme={toggleTheme}
         onExport={handleExport}
@@ -342,8 +452,22 @@ function EditorPage() {
           onMoveSelection={handleMoveSelection}
           onCopySelection={handleCopySelection}
           onSeparateSelection={handleSeparateSelection}
+          onSaveComponent={handleSaveComponent}
           onPickColor={handlePickColor}
+          stamp={activeStampId ? (stamps.find((stamp) => stamp.id === activeStampId) ?? null) : null}
+          onPlaceStamp={handlePlaceStamp}
         />
+        {componentsVisible && (
+          <div className="absolute left-4 top-4">
+            <ComponentsPanel
+              stamps={stamps}
+              activeStampId={activeStampId}
+              onSelect={handleSelectStamp}
+              onRename={handleRenameStamp}
+              onDelete={handleDeleteStamp}
+            />
+          </div>
+        )}
         {legendVisible && (
           <Legend
             legend={legend}
