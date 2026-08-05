@@ -121,6 +121,10 @@ function EditorPage() {
     setLegend((prev) => prev.map((entry) => (entry.id === id ? { ...entry, visible: !entry.visible } : entry)))
   }
 
+  const handleRenameLegendEntry = (id: string, label: string) => {
+    setLegend((prev) => prev.map((entry) => (entry.id === id ? { ...entry, label } : entry)))
+  }
+
   const handlePickColor = (legendId: string | null) => {
     setActiveLegendId(legendId)
     const label = legendId ? legend.find((entry) => entry.id === legendId)?.label : 'Eraser'
@@ -143,6 +147,12 @@ function EditorPage() {
 
   const handleRenameGroup = (id: string, name: string) => {
     setGroups((prev) => prev.map((group) => (group.id === id ? { ...group, name } : group)))
+  }
+
+  const handleCreateGroup = () => {
+    const newGroupId = createId()
+    setGroups((prev) => [...prev, { id: newGroupId, name: `Group ${prev.length}`, visible: true }])
+    setActiveGroupId(newGroupId)
   }
 
   const handleDeleteGroup = (id: string) => {
@@ -343,6 +353,7 @@ function EditorPage() {
             onRemove={handleRemoveLegendEntry}
             onToggleLocalVisible={handleToggleLocalVisible}
             onToggleGlobalVisible={handleToggleGlobalVisible}
+            onRename={handleRenameLegendEntry}
           />
         )}
         {groupsVisible && (
@@ -353,6 +364,7 @@ function EditorPage() {
               onSetActive={handleSetActiveGroup}
               onToggleVisible={handleToggleGroupVisible}
               onRename={handleRenameGroup}
+              onCreate={handleCreateGroup}
               onDelete={handleDeleteGroup}
               onMerge={handleMergeGroups}
             />

@@ -14,6 +14,7 @@ interface LegendProps {
   onRemove: (id: string) => void
   onToggleLocalVisible: (id: string) => void
   onToggleGlobalVisible: (id: string) => void
+  onRename: (id: string, label: string) => void
 }
 
 function Legend({
@@ -25,10 +26,12 @@ function Legend({
   onRemove,
   onToggleLocalVisible,
   onToggleGlobalVisible,
+  onRename,
 }: LegendProps) {
   const [label, setLabel] = useState('')
   const [color, setColor] = useState(DEFAULT_COLOR)
   const [settingsOpenId, setSettingsOpenId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   const handleAdd = () => {
     const trimmed = label.trim()
@@ -69,21 +72,40 @@ function Legend({
               title={locallyVisible ? 'Visible on this device' : 'Hidden on this device'}
               className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-brand-accent"
             />
-            <button
-              type="button"
-              onClick={() => onSelect(entry.id)}
-              className={`flex flex-1 items-center gap-2 rounded px-2 py-1 text-left text-sm ${
-                activeLegendId === entry.id
-                  ? 'bg-brand-accent text-white'
-                  : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800'
-              }`}
-            >
-              <span
-                className="h-4 w-4 rounded border border-slate-300"
-                style={{ backgroundColor: entry.color }}
+            {editingId === entry.id ? (
+              <input
+                autoFocus
+                type="text"
+                defaultValue={entry.label}
+                onBlur={(e) => {
+                  onRename(entry.id, e.target.value.trim() || entry.label)
+                  setEditingId(null)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur()
+                  if (e.key === 'Escape') setEditingId(null)
+                }}
+                className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-1.5 py-1 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
               />
-              {entry.label}
-            </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onSelect(entry.id)}
+                onDoubleClick={() => setEditingId(entry.id)}
+                title="Click to select, double-click to rename"
+                className={`flex flex-1 items-center gap-2 truncate rounded px-2 py-1 text-left text-sm ${
+                  activeLegendId === entry.id
+                    ? 'bg-brand-accent text-white'
+                    : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800'
+                }`}
+              >
+                <span
+                  className="h-4 w-4 shrink-0 rounded border border-slate-300"
+                  style={{ backgroundColor: entry.color }}
+                />
+                <span className="truncate">{entry.label}</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setSettingsOpenId((current) => (current === entry.id ? null : entry.id))}

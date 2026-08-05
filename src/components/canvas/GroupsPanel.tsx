@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { GearIcon } from './icons'
+import { DEFAULT_GROUP_ID } from './constants'
 import type { Group } from '../../types/editor'
 
 interface GroupsPanelProps {
@@ -7,6 +9,7 @@ interface GroupsPanelProps {
   onSetActive: (id: string) => void
   onToggleVisible: (id: string) => void
   onRename: (id: string, name: string) => void
+  onCreate: () => void
   onDelete: (id: string) => void
   onMerge: (ids: string[]) => void
 }
@@ -17,11 +20,13 @@ function GroupsPanel({
   onSetActive,
   onToggleVisible,
   onRename,
+  onCreate,
   onDelete,
   onMerge,
 }: GroupsPanelProps) {
   const [mergeSelection, setMergeSelection] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [settingsOpenId, setSettingsOpenId] = useState<string | null>(null)
 
   const toggleMergeSelection = (id: string) => {
     setMergeSelection((prev) => {
@@ -40,15 +45,7 @@ function GroupsPanel({
 
       <div className="flex flex-col gap-1">
         {groups.map((group) => (
-          <div key={group.id} className="flex items-center gap-1">
-            <input
-              type="checkbox"
-              checked={group.visible}
-              onChange={() => onToggleVisible(group.id)}
-              aria-label={group.visible ? `Hide ${group.name}` : `Show ${group.name}`}
-              title={group.visible ? 'Visible' : 'Hidden'}
-              className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-brand-accent"
-            />
+          <div key={group.id} className="relative flex items-center gap-1">
             <input
               type="checkbox"
               checked={mergeSelection.has(group.id)}
@@ -89,31 +86,65 @@ function GroupsPanel({
               </button>
             )}
 
-            {group.id !== 'default' && (
-              <button
-                type="button"
-                onClick={() => onDelete(group.id)}
-                aria-label={`Delete ${group.name}`}
-                className="rounded px-1 text-xs text-slate-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400"
-              >
-                ×
-              </button>
+            <button
+              type="button"
+              onClick={() => setSettingsOpenId((current) => (current === group.id ? null : group.id))}
+              aria-label={`${group.name} settings`}
+              aria-expanded={settingsOpenId === group.id}
+              className="rounded p-1 text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200"
+            >
+              <GearIcon />
+            </button>
+
+            {settingsOpenId === group.id && (
+              <div className="absolute right-0 top-full z-10 mt-1 w-48 rounded border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                <label className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={group.visible}
+                    onChange={() => onToggleVisible(group.id)}
+                    className="h-3.5 w-3.5 accent-brand-accent"
+                  />
+                  Visible
+                </label>
+                {group.id !== DEFAULT_GROUP_ID && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onDelete(group.id)
+                      setSettingsOpenId(null)
+                    }}
+                    className="mt-1 w-full rounded border-t border-slate-200 px-2 py-1 pt-1.5 text-left text-xs text-red-500 hover:bg-red-50 dark:border-slate-700 dark:text-red-400 dark:hover:bg-red-950/40"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
             )}
           </div>
         ))}
       </div>
 
-      <button
-        type="button"
-        disabled={mergeSelection.size < 2}
-        onClick={() => {
-          onMerge(Array.from(mergeSelection))
-          setMergeSelection(new Set())
-        }}
-        className="mt-1 rounded border-t border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 disabled:opacity-40 dark:border-slate-800 dark:text-slate-300"
-      >
-        Merge selected
-      </button>
+      <div className="mt-1 flex gap-1 border-t border-slate-200 pt-2 dark:border-slate-800">
+        <button
+          type="button"
+          onClick={onCreate}
+          className="flex-1 rounded bg-brand-accent px-2 py-1 text-xs font-medium text-white"
+        >
+          New group
+        </button>
+        <button
+          type="button"
+          disabled={mergeSelection.size < 2}
+          onClick={() => {
+            onMerge(Array.from(mergeSelection))
+            setMergeSelection(new Set())
+          }}
+          className="flex-1 rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300"
+        >
+          Merge selected
+        </button>
+      </div>
     </div>
   )
 }
