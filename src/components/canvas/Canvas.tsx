@@ -302,8 +302,17 @@ function Canvas({
         const cells = layers[ln] ?? {}
         for (const [coord, value] of Object.entries(cells)) {
           const [x, y] = coord.split(',').map(Number)
-          if (x >= minX && x <= maxX && y >= minY && y <= maxY && isCellActive(ln, coord, value)) {
-            found.add(`${ln}:${coord}`)
+          const compositeKey = `${ln}:${coord}`
+          const groupId = groupMembership[compositeKey] ?? DEFAULT_GROUP_ID
+          if (
+            x >= minX &&
+            x <= maxX &&
+            y >= minY &&
+            y <= maxY &&
+            groupId === activeGroupId &&
+            isCellActive(ln, coord, value)
+          ) {
+            found.add(compositeKey)
           }
         }
       }
@@ -330,7 +339,7 @@ function Canvas({
 
       return found
     },
-    [layerScope, layers, layer, groupMembership, isCellActive],
+    [layerScope, layers, layer, groupMembership, isCellActive, activeGroupId],
   )
 
   const handlePointerDown = useCallback(
